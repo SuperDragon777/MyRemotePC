@@ -45,6 +45,15 @@ def superuser_only(func):
 
     return wrapper
 
+async def on_startup(app: Application):
+    try:
+        await app.bot.send_message(
+            chat_id = SUPERUSER,
+            text="🟢 Bot is polling"
+        )
+    except Exception as e:
+        print(f"Startup notify error: {e}")
+
 @superuser_only
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text('blank')
@@ -66,6 +75,9 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     /type <text>
     /github
     /ip
+    /f4
+    /cpu
+    /ram
     """
     await update.message.reply_text(help_text)
 
@@ -211,13 +223,58 @@ async def ip(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text("❌")
 
+@superuser_only
+async def f4(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        def execute():
+            pyautogui.hotkey('alt', 'f4')
+        
+        thread = threading.Thread(target=execute, daemon=True)
+        thread.start()
+        
+        await update.message.reply_text("⏳ Executing...")
+    except Exception as e:
+        await update.message.reply_text("❌")
+
+@superuser_only
+async def cpu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        usage = psutil.cpu_percent(interval=1)
+        await update.message.reply_text(f"🧠 CPU load: {usage}%")
+    except Exception:
+        await update.message.reply_text("❌")
+
+@superuser_only
+async def ram(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        mem = psutil.virtual_memory()
+
+        total = mem.total // (1024 ** 2)
+        used = mem.used // (1024 ** 2)
+        free = mem.available // (1024 ** 2)
+        percent = mem.percent
+
+        await update.message.reply_text(
+            f"📦 Total: {total} MB\n"
+            f"📊 Used: {used} MB\n"
+            f"🟢 Free: {free} MB\n"
+            f"📈 Load: {percent}%"
+        )
+    except Exception:
+        await update.message.reply_text("❌")
+
 
 @superuser_only
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f'idk what to do')
 
 def main():
-    app = Application.builder().token(BOT_TOKEN).build()
+    app = (
+        Application.builder()
+        .token(BOT_TOKEN)
+        .post_init(on_startup)
+        .build()
+    )
     
     app.add_handler(CommandHandler('start', start))
     app.add_handler(CommandHandler('help', help_command))
@@ -231,7 +288,11 @@ def main():
     app.add_handler(CommandHandler('shutdown', shutdown))
     app.add_handler(CommandHandler('hibernate', hibernate))
     app.add_handler(CommandHandler('type', type))
+    app.add_handler(CommandHandler('github', github))
     app.add_handler(CommandHandler('ip', ip))
+    app.add_handler(CommandHandler('f4', f4))
+    app.add_handler(CommandHandler('cpu', cpu))
+    app.add_handler(CommandHandler('ram', ram))
     
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
