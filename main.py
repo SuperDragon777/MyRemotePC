@@ -17,6 +17,7 @@ import pyautogui
 import time
 import socket
 import requests
+from pathlib import Path
 
 load_dotenv()
 
@@ -30,6 +31,10 @@ if not SUPERUSER:
     raise RuntimeError("SUPERUSER is not set")
 
 SUPERUSER = int(SUPERUSER)
+
+DOWNLOAD_DIR = Path("downloads")
+DOWNLOAD_DIR.mkdir(exist_ok=True)
+
 
 def superuser_only(func):
     @wraps(func)
@@ -78,6 +83,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     /f4
     /cpu
     /ram
+    /disk
     """
     await update.message.reply_text(help_text)
 
@@ -263,6 +269,79 @@ async def ram(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception:
         await update.message.reply_text("❌")
 
+@superuser_only
+async def disk(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        usage = psutil.disk_usage('/')
+
+        total = usage.total // (1024 ** 3)
+        used = usage.used // (1024 ** 3)
+        free = usage.free // (1024 ** 3)
+        percent = usage.percent
+
+        await update.message.reply_text(
+            f"📦 Total: {total} GB\n"
+            f"📊 Used: {used} GB\n"
+            f"🟢 Free: {free} GB\n"
+            f"📈 Load: {percent}%"
+        )
+    except Exception:
+        await update.message.reply_text("❌")
+
+@superuser_only
+async def battery(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        bat = psutil.sensors_battery()
+
+        if bat is None:
+            await update.message.reply_text("🔌 Battery not found")
+            return
+
+        percent = bat.percent
+        plugged = bat.power_plugged
+
+        status = "🔌 Charging" if plugged else "🔋 On battery"
+
+        await update.message.reply_text(
+            f"⚡ Charge: {percent}%\n"
+            f"{status}"
+        )
+
+    except Exception:
+        await update.message.reply_text("❌")
+
+@superuser_only
+async def download_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    message = update.message
+
+    if message.document:
+        tg_file = message.document
+        filename = tg_file.file_name
+
+    elif message.photo:
+        tg_file = message.photo[-1]
+        filename = f"photo_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg"
+
+    elif message.video:
+        tg_file = message.video
+        filename = f"video_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4"
+
+    else:
+        await update.message.reply_text("❌")
+        return
+
+    try:
+        file = await tg_file.get_file()
+        save_path = DOWNLOAD_DIR / filename
+
+        await file.download_to_drive(custom_path=str(save_path))
+
+        await update.message.reply_text("✅")
+
+    except Exception as e:
+        await update.message.reply_text("❌")
+        print(e)
+
 
 @superuser_only
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -293,8 +372,16 @@ def main():
     app.add_handler(CommandHandler('f4', f4))
     app.add_handler(CommandHandler('cpu', cpu))
     app.add_handler(CommandHandler('ram', ram))
+    app.add_handler(CommandHandler('disk', disk))
+    app.add_handler(CommandHandler('battery', battery))
     
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.add_handler(
+        MessageHandler(
+            filters.Document.ALL | filters.PHOTO | filters.VIDEO,
+            download_file
+        )
+    )
 
     print('Polling...')
     app.run_polling()
