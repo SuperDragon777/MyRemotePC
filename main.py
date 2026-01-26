@@ -12,6 +12,7 @@ import ctypes
 import threading
 import subprocess
 import pyautogui
+import time
 
 load_dotenv()
 
@@ -54,6 +55,11 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     /uptime
     /screenshot
     /superuser
+    /msg <text>
+    /winl
+    /shutdown
+    /hibernate
+    /type <text>
     """
     await update.message.reply_text(help_text)
 
@@ -157,6 +163,26 @@ async def hibernate(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌")
 
 @superuser_only
+async def type(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text("Usage: /type <text>")
+        return
+    
+    text = ' '.join(context.args)
+    
+    try:
+        def execute():
+            time.sleep(0.5)
+            pyautogui.typewrite(text, interval=0.05)
+        
+        thread = threading.Thread(target=execute, daemon=True)
+        thread.start()
+        
+        await update.message.reply_text("⌨️ Typing...")
+    except Exception as e:
+        await update.message.reply_text("❌")
+
+@superuser_only
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f'idk what to do')
 
@@ -174,6 +200,7 @@ def main():
     app.add_handler(CommandHandler('winl', winl))
     app.add_handler(CommandHandler('shutdown', shutdown))
     app.add_handler(CommandHandler('hibernate', hibernate))
+    app.add_handler(CommandHandler('type', type))
     
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
