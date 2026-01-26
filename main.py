@@ -63,36 +63,46 @@ async def on_startup(app: Application):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text('blank')
 
+@superuser_only
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    help_text = """
-    If you send a file (photo, video, document), it will be downloaded to the PC in the "downloads" folder.
-    
-    Available commands:
-    /start
-    /help
-    /suicide
-    /system
-    /uptime
-    /screenshot
-    /superuser
-    /msg <text>
-    /winl
-    /shutdown
-    /hibernate
-    /type <text>
-    /github
-    /ip
-    /f4
-    /cpu
-    /ram
-    /disk
-    /battery
-    /pwd
-    /ls [path]
-    /rm <file>
-    /cat <file>
-    """
-    await update.message.reply_text(help_text)
+    help_text = (
+        "📥 *File Handling*\n"
+        "If you send a file (photo, video, document), it will be downloaded to the PC in the `downloads` folder.\n\n"
+
+        "⚡ *System Commands*\n"
+        "/system — Show OS info\n"
+        "/uptime — Show system uptime\n"
+        "/cpu — CPU load\n"
+        "/ram — RAM usage\n"
+        "/disk — Disk usage\n"
+        "/battery — Battery status\n"
+        "/ip — Local & External IP\n\n"
+
+        "🖥️ *PC Control*\n"
+        "/screenshot — Take screenshot\n"
+        "/winl — Lock workstation\n"
+        "/shutdown — Shutdown PC\n"
+        "/hibernate — Hibernate PC\n"
+        "/type <text> — Type text via keyboard\n"
+        "/msg <text> — Show message box\n"
+        "/f4 — Press Alt+F4\n\n"
+
+        "📂 *File Manager*\n"
+        "/pwd — Current directory\n"
+        "/ls [path] — List files\n"
+        "/rm <file> — Delete file\n"
+        "/cat <file> — Read text file\n\n"
+
+        "🛠️ *Bot Info*\n"
+        "/start — Start bot\n"
+        "/help — This help menu\n"
+        "/superuser — Check superuser\n"
+        "/suicide — Stop bot\n"
+        "/github — GitHub link\n"
+    )
+
+    await update.message.reply_text(help_text, parse_mode="Markdown")
+
 
 
 @superuser_only
