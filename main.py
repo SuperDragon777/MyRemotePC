@@ -10,6 +10,8 @@ from functools import wraps
 from PIL import ImageGrab
 import ctypes
 import threading
+import subprocess
+import pyautogui
 
 load_dotenv()
 
@@ -116,6 +118,45 @@ async def msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌")
 
 @superuser_only
+async def winl(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        def execute():
+            subprocess.run('rundll32.exe user32.dll,LockWorkStation')
+        
+        thread = threading.Thread(target=execute, daemon=True)
+        thread.start()
+        
+        await update.message.reply_text("🚪 Locking...")
+    except Exception as e:
+        await update.message.reply_text("❌")
+
+@superuser_only
+async def shutdown(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        def execute():
+            subprocess.run('shutdown /s /t 0 /f', shell=True, check=True)
+        
+        thread = threading.Thread(target=execute, daemon=True)
+        thread.start()
+        
+        await update.message.reply_text("🔴 Shutting down...")
+    except Exception as e:
+        await update.message.reply_text("❌")
+
+@superuser_only
+async def hibernate(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        def execute():
+            subprocess.run(['rundll32.exe', 'powrprof.dll,SetSuspendState', '0,1,0'])
+        
+        thread = threading.Thread(target=execute, daemon=True)
+        thread.start()
+        
+        await update.message.reply_text("💤 Hibernating...")
+    except Exception as e:
+        await update.message.reply_text("❌")
+
+@superuser_only
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f'idk what to do')
 
@@ -130,6 +171,9 @@ def main():
     app.add_handler(CommandHandler('screenshot', screenshot))
     app.add_handler(CommandHandler('superuser', superuser))
     app.add_handler(CommandHandler('msg', msg))
+    app.add_handler(CommandHandler('winl', winl))
+    app.add_handler(CommandHandler('shutdown', shutdown))
+    app.add_handler(CommandHandler('hibernate', hibernate))
     
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
