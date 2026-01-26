@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import os
 import sys
 import platform
@@ -13,6 +15,8 @@ import threading
 import subprocess
 import pyautogui
 import time
+import socket
+import requests
 
 load_dotenv()
 
@@ -60,6 +64,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     /shutdown
     /hibernate
     /type <text>
+    /github
+    /ip
     """
     await update.message.reply_text(help_text)
 
@@ -183,6 +189,30 @@ async def type(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌")
 
 @superuser_only
+async def github(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("https://github.com/SuperDragon777/MyRemotePC")
+
+@superuser_only
+async def ip(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        hostname = socket.gethostname()
+        local_ip = socket.gethostbyname(hostname)
+
+        external_ip = requests.get(
+            'https://api.ipify.org',
+            timeout=5
+        ).text
+
+        await update.message.reply_text(
+            f"🏠 Local: {local_ip}\n"
+            f"🌍 External: {external_ip}"
+        )
+
+    except Exception as e:
+        await update.message.reply_text("❌")
+
+
+@superuser_only
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f'idk what to do')
 
@@ -201,6 +231,7 @@ def main():
     app.add_handler(CommandHandler('shutdown', shutdown))
     app.add_handler(CommandHandler('hibernate', hibernate))
     app.add_handler(CommandHandler('type', type))
+    app.add_handler(CommandHandler('ip', ip))
     
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
