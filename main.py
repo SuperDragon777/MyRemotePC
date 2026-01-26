@@ -7,7 +7,9 @@ from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from functools import wraps
-import pyautogui
+from PIL import ImageGrab
+import ctypes
+import threading
 
 load_dotenv()
 
@@ -40,16 +42,16 @@ def superuser_only(func):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text('blank')
 
-@superuser_only
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     help_text = """
-    Доступные команды:
+    Available commands:
     /start
     /help
     /suicide
     /system
     /uptime
     /screenshot
+    /superuser
     """
     await update.message.reply_text(help_text)
 
@@ -57,7 +59,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 @superuser_only
 async def suicide(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Bye 👋")
-    context.application.stop_running = True
+    await context.application.shutdown()
     await context.application.stop()
 
 @superuser_only
@@ -79,19 +81,39 @@ async def screenshot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         filename = f"screenshot_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
         
-        screenshot = pyautogui.screenshot()
-        screenshot.save(filename)
-
-        await update.message.reply_photo(
-            photo=open(filename, 'rb'),
-            caption="📸 Screenshot"
-        )
-
-        os.remove(filename)
-
+        screenshot = ImageGrab.grab() # сделали скрин
+        screenshot.save(filename) # сохранили его
+        
+        await update.message.reply_photo(photo=open(filename, 'rb'), caption="") # отправили
+        os.remove(filename) # удалили локально
     except Exception as e:
         await update.message.reply_text(f"Error: {e}")
 
+async def superuser(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    if user and user.id == SUPERUSER:
+        await update.message.reply_text("✅ True")
+    else:
+        await update.message.reply_text("❌ False")
+
+@superuser_only
+async def msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text("‼️")
+        return
+    
+    text = ' '.join(context.args)
+    
+    try:
+        def show_messagebox():
+            ctypes.windll.user32.MessageBoxW(0, text, "MyRemotePC", 0)
+        
+        thread = threading.Thread(target=show_messagebox, daemon=True)
+        thread.start()
+        
+        await update.message.reply_text("✅")
+    except Exception as e:
+        await update.message.reply_text("❌")
 
 @superuser_only
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -106,11 +128,12 @@ def main():
     app.add_handler(CommandHandler('system', system))
     app.add_handler(CommandHandler('uptime', uptime))
     app.add_handler(CommandHandler('screenshot', screenshot))
-
+    app.add_handler(CommandHandler('superuser', superuser))
+    app.add_handler(CommandHandler('msg', msg))
     
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    print('Bot started...')
+    print('Polling...')
     app.run_polling()
 
 if __name__ == '__main__':
