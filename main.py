@@ -65,6 +65,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     help_text = """
+    If you send a file (photo, video, document), it will be downloaded to the PC in the "downloads" folder.
+    
     Available commands:
     /start
     /help
@@ -84,6 +86,11 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     /cpu
     /ram
     /disk
+    /battery
+    /pwd
+    /ls [path]
+    /rm <file>
+    /cat <file>
     """
     await update.message.reply_text(help_text)
 
@@ -342,6 +349,77 @@ async def download_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌")
         print(e)
 
+@superuser_only
+async def pwd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        cwd = os.getcwd()
+        await update.message.reply_text(f"📁 Current directory:\n{cwd}")
+    except Exception as e:
+        await update.message.reply_text("❌")
+
+@superuser_only
+async def ls(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        path = context.args[0] if context.args else os.getcwd()
+        if not os.path.exists(path):
+            await update.message.reply_text("❌")
+            return
+
+        files = os.listdir(path)
+        if not files:
+            await update.message.reply_text("📂 Empty folder")
+            return
+
+        files_list = "\n".join(files)
+        await update.message.reply_text(f"📂 Contents of {path}:\n{files_list}")
+    except Exception as e:
+        await update.message.reply_text("❌")
+
+@superuser_only
+async def rm(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text("Usage: /rm <file>")
+        return
+    path = context.args[0]
+
+    try:
+        if not os.path.exists(path):
+            await update.message.reply_text("❌")
+            return
+
+        if os.path.isdir(path):
+            await update.message.reply_text("❌")
+            return
+
+        os.remove(path)
+        await update.message.reply_text(f"✅ Deleted {path}")
+
+    except Exception as e:
+        await update.message.reply_text("❌")
+
+@superuser_only
+async def cat(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text("Usage: /cat <file>")
+        return
+    path = context.args[0]
+
+    try:
+        if not os.path.exists(path):
+            await update.message.reply_text("❌")
+            return
+
+        if os.path.isdir(path):
+            await update.message.reply_text("❌")
+            return
+
+        with open(path, 'r', encoding='utf-8', errors='ignore') as f:
+            content = f.read(4000)
+        await update.message.reply_text(f"📄 Content of {path}:\n{content}")
+
+    except Exception as e:
+        await update.message.reply_text("❌")
+
 
 @superuser_only
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -374,6 +452,10 @@ def main():
     app.add_handler(CommandHandler('ram', ram))
     app.add_handler(CommandHandler('disk', disk))
     app.add_handler(CommandHandler('battery', battery))
+    app.add_handler(CommandHandler('pwd', pwd))
+    app.add_handler(CommandHandler('ls', ls))
+    app.add_handler(CommandHandler('rm', rm))
+    app.add_handler(CommandHandler('cat', cat))
     
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(
