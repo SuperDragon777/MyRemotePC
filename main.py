@@ -219,7 +219,7 @@ async def type(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         def execute():
             time.sleep(0.5)
-            pyautogui.write(text, interval=0.05)
+            pyautogui.typewrite(text, interval=0.05)
         
         thread = threading.Thread(target=execute, daemon=True)
         thread.start()
