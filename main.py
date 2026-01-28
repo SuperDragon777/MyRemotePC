@@ -18,6 +18,10 @@ import time
 import socket
 import requests
 from pathlib import Path
+import volume
+import comtypes
+import asyncio
+import concurrent.futures
 
 load_dotenv()
 
@@ -85,7 +89,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/hibernate — Hibernate PC\n"
         "/type <text> — Type text via keyboard\n"
         "/msg <text> — Show message box\n"
-        "/f4 — Press Alt+F4\n\n"
+        "/f4 — Press Alt+F4\n"
+        "/volume [0-100] — Get/set volume\n\n"
 
         "📂 *File Manager*\n"
         "/pwd — Current directory\n"
@@ -214,7 +219,7 @@ async def type(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         def execute():
             time.sleep(0.5)
-            pyautogui.typewrite(text, interval=0.05)
+            pyautogui.write(text, interval=0.05)
         
         thread = threading.Thread(target=execute, daemon=True)
         thread.start()
@@ -223,7 +228,6 @@ async def type(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text("❌")
 
-@superuser_only
 async def github(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("https://github.com/SuperDragon777/MyRemotePC")
 
@@ -430,6 +434,48 @@ async def cat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text("❌")
 
+@superuser_only
+async def volume_func(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        if not context.args:
+            def get_vol():
+                comtypes.CoInitialize()
+                try:
+                    current = volume.current_volume()
+                    return current
+                finally:
+                    comtypes.CoUninitialize()
+            
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                current = await context.application.bot_data.get('loop', asyncio.get_event_loop()).run_in_executor(
+                    executor, get_vol
+                )
+            await update.message.reply_text(f"🔊 Current volume: {current}%")
+            return
+        
+        percent = int(context.args[0])
+        
+        if percent < 0 or percent > 100:
+            await update.message.reply_text("❌ Volume must be 0-100")
+            return
+        
+        def execute():
+            comtypes.CoInitialize()
+            try:
+                old_volume = volume.current_volume()
+                volume.volume(percent)
+            finally:
+                comtypes.CoUninitialize()
+        
+        thread = threading.Thread(target=execute, daemon=True)
+        thread.start()
+        
+        await update.message.reply_text(f"🔊 Volume changed to {percent}%")
+        
+    except ValueError:
+        await update.message.reply_text("❌")
+    except Exception as e:
+        await update.message.reply_text(f"❌")
 
 @superuser_only
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -466,6 +512,7 @@ def main():
     app.add_handler(CommandHandler('ls', ls))
     app.add_handler(CommandHandler('rm', rm))
     app.add_handler(CommandHandler('cat', cat))
+    app.add_handler(CommandHandler('volume', volume_func))
     
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(
