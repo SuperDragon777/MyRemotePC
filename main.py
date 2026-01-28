@@ -22,6 +22,7 @@ import volume
 import comtypes
 import asyncio
 import concurrent.futures
+import pyttsx3
 
 load_dotenv()
 
@@ -90,7 +91,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/type <text> — Type text via keyboard\n"
         "/msg <text> — Show message box\n"
         "/f4 — Press Alt+F4\n"
-        "/volume [0-100] — Get/set volume\n\n"
+        "/volume [0-100] — Get/set volume\n"
+        "/say <text> — Text to speech\n\n"
 
         "📂 *File Manager*\n"
         "/pwd — Current directory\n"
@@ -478,6 +480,31 @@ async def volume_func(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"❌")
 
 @superuser_only
+async def say(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text("Usage: /say <text>")
+        return
+
+    text = ' '.join(context.args)
+
+    def speak(text: str):
+        try:
+            engine = pyttsx3.init()
+            engine.say(text)
+            engine.runAndWait()
+            engine.stop()
+        except Exception as e:
+            print("TTS error:", e)
+
+    threading.Thread(
+        target=speak,
+        args=(text,),
+        daemon=False
+    ).start()
+
+    await update.message.reply_text("🗣️ Speaking...")
+
+@superuser_only
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f'idk what to do')
 
@@ -513,6 +540,7 @@ def main():
     app.add_handler(CommandHandler('rm', rm))
     app.add_handler(CommandHandler('cat', cat))
     app.add_handler(CommandHandler('volume', volume_func))
+    app.add_handler(CommandHandler('say', say))
     
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(
