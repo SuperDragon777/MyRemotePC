@@ -23,6 +23,7 @@ import comtypes
 import asyncio
 import concurrent.futures
 import pyttsx3
+import webbrowser
 
 load_dotenv()
 
@@ -115,7 +116,12 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/help — This help menu\n"
         "/superuser — Check superuser\n"
         "/suicide — Stop bot\n"
-        "/github — GitHub link\n"
+        "/github — GitHub link\n\n"
+        
+        "🌐 *Internet*\n"
+        "/browser <url> — Open URL in browser\n"
+        "/ping <host> — Ping host\n"
+        "/wifi — Show WiFi networks\n\n"
     )
 
     await update.message.reply_text(help_text, parse_mode="Markdown")
@@ -599,6 +605,100 @@ async def mouse_pos(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌")
 
 @superuser_only
+async def browser(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text("Usage: /browser <url>")
+        return
+    
+    url = context.args[0]
+    
+    try:
+        def execute():
+            webbrowser.open(url)
+        
+        thread = threading.Thread(target=execute, daemon=True)
+        thread.start()
+        
+        await update.message.reply_text(f"🌐 Opening: {url}")
+    except Exception as e:
+        await update.message.reply_text("❌")
+
+@superuser_only
+async def wifi(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        def execute():
+            result = subprocess.run(
+                ['netsh', 'wlan', 'show', 'networks'],
+                capture_output=True,
+                text=True,
+                encoding='cp866',
+                shell=True
+            )
+            return result.stdout
+        
+        output = await asyncio.get_event_loop().run_in_executor(
+            None, execute
+        )
+        
+        if not output:
+            await update.message.reply_text("❌ Error getting WiFi data")
+            return
+        
+        try:
+            output = output.encode('cp866').decode('utf-8', errors='ignore')
+        except:
+            pass
+        
+        if len(output) > 4000:
+            output = output[:4000] + "..."
+        
+        await update.message.reply_text(f"📡 WiFi Networks:\n\n```\n{output}\n```", parse_mode="Markdown")
+        
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error: {e}")
+
+
+@superuser_only
+async def ping(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text("Usage: /ping <host>")
+        return
+    
+    host = context.args[0]
+    
+    try:
+        def execute():
+            result = subprocess.run(
+                f'chcp 65001 > nul && ping -n 4 {host}',
+                capture_output=True,
+                text=True,
+                encoding='utf-8',
+                timeout=15,
+                shell=True
+            )
+            return result.stdout
+        
+        await update.message.reply_text(f"🏓 Pinging {host}...")
+        
+        output = await asyncio.get_event_loop().run_in_executor(
+            None, execute
+        )
+        
+        if not output:
+            await update.message.reply_text("❌ No output from ping")
+            return
+        
+        if len(output) > 4000:
+            output = output[:4000] + "..."
+        
+        await update.message.reply_text(f"🏓 Ping {host}:\n\n```\n{output}\n```", parse_mode="Markdown")
+        
+    except subprocess.TimeoutExpired:
+        await update.message.reply_text("❌ Ping timeout")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error: {e}")
+
+@superuser_only
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f'idk what to do')
 
@@ -640,6 +740,9 @@ def main():
     app.add_handler(CommandHandler('dclick', mouse_double_click))
     app.add_handler(CommandHandler('scroll', mouse_scroll))
     app.add_handler(CommandHandler('mpos', mouse_pos))
+    app.add_handler(CommandHandler('browser', browser))
+    app.add_handler(CommandHandler('wifi', wifi))
+    app.add_handler(CommandHandler('ping', ping))
     
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(
