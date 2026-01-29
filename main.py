@@ -40,6 +40,7 @@ SUPERUSER = int(SUPERUSER)
 DOWNLOAD_DIR = Path("downloads")
 DOWNLOAD_DIR.mkdir(exist_ok=True)
 
+pyautogui.FAILSAFE = False # without this, moving mouse to corner won't raise exception
 
 def superuser_only(func):
     @wraps(func)
@@ -88,17 +89,26 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/winl — Lock workstation\n"
         "/shutdown — Shutdown PC\n"
         "/hibernate — Hibernate PC\n"
-        "/type <text> — Type text via keyboard\n"
-        "/msg <text> — Show message box\n"
         "/f4 — Press Alt+F4\n"
         "/volume [0-100] — Get/set volume\n"
         "/say <text> — Text to speech\n\n"
 
+        "⌨️ *Keyboard & Mouse*\n"
+        "/type <text> — Type text via keyboard\n"
+        "/mouse <x> <y> — Move mouse to coordinates\n"
+        "/mpos — Get current mouse position\n"
+        "/click [left/right/middle] — Click mouse button (default: left)\n"
+        "/dclick — Double-click mouse\n"
+        "/scroll <amount> — Scroll (positive = up, negative = down)\n\n"
+
+        "💬 *Messages*\n"
+        "/msg <text> — Show message box\n\n"
+
         "📂 *File Manager*\n"
         "/pwd — Current directory\n"
         "/ls [path] — List files\n"
-        "/rm <file> — Delete file\n"
-        "/cat <file> — Read text file\n\n"
+        "/cat <file> — Read text file\n"
+        "/rm <file> — Delete file\n\n"
 
         "🛠️ *Bot Info*\n"
         "/start — Start bot\n"
@@ -505,6 +515,90 @@ async def say(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🗣️ Speaking...")
 
 @superuser_only
+async def mouse_move(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if len(context.args) < 2:
+        await update.message.reply_text("Usage: /mouse <x> <y>")
+        return
+    
+    try:
+        x = int(context.args[0])
+        y = int(context.args[1])
+        
+        def execute():
+            pyautogui.moveTo(x, y, duration=0.2)
+        
+        thread = threading.Thread(target=execute, daemon=True)
+        thread.start()
+        
+        await update.message.reply_text(f"🖱️ Moved to ({x}, {y})")
+    except ValueError:
+        await update.message.reply_text("❌ Invalid coordinates")
+    except Exception as e:
+        await update.message.reply_text("❌")
+
+@superuser_only
+async def mouse_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        button = context.args[0] if context.args else 'left'
+        
+        if button not in ['left', 'right', 'middle']:
+            await update.message.reply_text("❌ Button must be: left, right, middle")
+            return
+        
+        def execute():
+            pyautogui.click(button=button)
+        
+        thread = threading.Thread(target=execute, daemon=True)
+        thread.start()
+        
+        await update.message.reply_text(f"🖱️ Clicked {button} button")
+    except Exception as e:
+        await update.message.reply_text("❌")
+
+@superuser_only
+async def mouse_double_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        def execute():
+            pyautogui.doubleClick()
+        
+        thread = threading.Thread(target=execute, daemon=True)
+        thread.start()
+        
+        await update.message.reply_text("🖱️ Double clicked")
+    except Exception as e:
+        await update.message.reply_text("❌")
+
+@superuser_only
+async def mouse_scroll(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text("Usage: /scroll <amount>")
+        return
+    
+    try:
+        amount = int(context.args[0])
+        
+        def execute():
+            pyautogui.scroll(amount)
+        
+        thread = threading.Thread(target=execute, daemon=True)
+        thread.start()
+        
+        direction = "up" if amount > 0 else "down"
+        await update.message.reply_text(f"🖱️ Scrolled {direction}")
+    except ValueError:
+        await update.message.reply_text("❌ Invalid amount")
+    except Exception as e:
+        await update.message.reply_text("❌")
+
+@superuser_only
+async def mouse_pos(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        x, y = pyautogui.position()
+        await update.message.reply_text(f"🖱️ Mouse position: ({x}, {y})")
+    except Exception as e:
+        await update.message.reply_text("❌")
+
+@superuser_only
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f'idk what to do')
 
@@ -541,6 +635,11 @@ def main():
     app.add_handler(CommandHandler('cat', cat))
     app.add_handler(CommandHandler('volume', volume_func))
     app.add_handler(CommandHandler('say', say))
+    app.add_handler(CommandHandler('mouse', mouse_move))
+    app.add_handler(CommandHandler('click', mouse_click))
+    app.add_handler(CommandHandler('dclick', mouse_double_click))
+    app.add_handler(CommandHandler('scroll', mouse_scroll))
+    app.add_handler(CommandHandler('mpos', mouse_pos))
     
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(
