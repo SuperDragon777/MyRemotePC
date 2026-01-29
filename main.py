@@ -501,24 +501,26 @@ async def say(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         await update.message.reply_text("Usage: /say <text>")
         return
-
+    
     text = ' '.join(context.args)
-
+    
     def speak(text: str):
         try:
+            comtypes.CoInitialize()
             engine = pyttsx3.init()
             engine.say(text)
             engine.runAndWait()
             engine.stop()
+            comtypes.CoUninitialize()
         except Exception as e:
             print("TTS error:", e)
-
+    
     threading.Thread(
         target=speak,
         args=(text,),
         daemon=False
     ).start()
-
+    
     await update.message.reply_text("🗣️ Speaking...")
 
 @superuser_only
