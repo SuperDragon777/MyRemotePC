@@ -93,7 +93,9 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/f4 — Press Alt+F4\n"
         "/volume [0-100] — Get/set volume\n"
         "/say <text> — Text to speech\n"
-        "/cmd <command> — Run command (use carefully)\n\n"
+        "/cmd <command> — Run command (use carefully)\n"
+        "/tm — Show active processes\n"
+        "/kill <pid> - Kill process by PID\n\n"
 
         "⌨️ *Keyboard & Mouse*\n"
         "/type <text> — Type text via keyboard\n"
@@ -765,6 +767,59 @@ async def cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"❌ Error: {e}")
 
 @superuser_only
+async def tm(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        processes = []
+
+        for proc in psutil.process_iter(['pid', 'name', 'cpu_percent', 'memory_percent']):
+            try:
+                info = proc.info
+                processes.append(
+                    f"{info['pid']:>6} | "
+                    f"{info['cpu_percent']:>5.1f}% CPU | "
+                    f"{info['memory_percent']:>5.1f}% RAM | "
+                    f"{info['name']}"
+                )
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+
+        if not processes:
+            await update.message.reply_text("❌ No processes found")
+            return
+
+        output = "PID    | CPU   | RAM   | NAME\n"
+        output += "-" * 40 + "\n"
+        output += "\n".join(processes[:40])
+
+        if len(output) > 4000:
+            output = output[:4000] + "\n... (truncated)"
+
+        await update.message.reply_text(
+            f"🧾 Active processes:\n\n```\n{output}\n```",
+            parse_mode="Markdown"
+        )
+
+    except Exception as e:
+        await update.message.reply_text("❌ Error getting process list")
+
+@superuser_only
+async def kill(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text("Usage: /kill <pid>")
+        return
+
+    try:
+        pid = int(context.args[0])
+        p = psutil.Process(pid)
+        p.kill()
+        await update.message.reply_text(f"💀 Killed process {pid}")
+    except psutil.NoSuchProcess:
+        await update.message.reply_text("❌ No such process")
+    except Exception as e:
+        await update.message.reply_text("❌ Access denied or error")
+
+
+@superuser_only
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f'idk what to do')
 
@@ -810,6 +865,8 @@ def main():
     app.add_handler(CommandHandler('wifi', wifi))
     app.add_handler(CommandHandler('ping', ping))
     app.add_handler(CommandHandler('cmd', cmd))
+    app.add_handler(CommandHandler('tm', tm))
+    app.add_handler(CommandHandler('kill', kill))
     
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(
