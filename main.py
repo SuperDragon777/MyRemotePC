@@ -92,7 +92,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/hibernate — Hibernate PC\n"
         "/f4 — Press Alt+F4\n"
         "/volume [0-100] — Get/set volume\n"
-        "/say <text> — Text to speech\n\n"
+        "/say <text> — Text to speech\n"
+        "/cmd <command> — Run command (use carefully)\n\n"
 
         "⌨️ *Keyboard & Mouse*\n"
         "/type <text> — Type text via keyboard\n"
@@ -699,6 +700,69 @@ async def ping(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"❌ Error: {e}")
 
 @superuser_only
+async def cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text("Usage: /cmd <command>")
+        return
+    
+    command = ' '.join(context.args)
+    
+    try:
+        def execute():
+            result = subprocess.run(
+                command,
+                capture_output=True,
+                shell=True,
+                timeout=30
+            )
+            try:
+                stdout = result.stdout.decode('cp866')
+            except:
+                try:
+                    stdout = result.stdout.decode('utf-8')
+                except:
+                    stdout = result.stdout.decode('cp1251', errors='ignore')
+            
+            try:
+                stderr = result.stderr.decode('cp866')
+            except:
+                try:
+                    stderr = result.stderr.decode('utf-8')
+                except:
+                    stderr = result.stderr.decode('cp1251', errors='ignore')
+            
+            return stdout, stderr, result.returncode
+        
+        await update.message.reply_text(f"⚙️ Executing: `{command}`", parse_mode="Markdown")
+        
+        stdout, stderr, returncode = await asyncio.get_event_loop().run_in_executor(
+            None, execute
+        )
+        
+        output = ""
+        
+        if stdout:
+            output += f"📤 Output:\n```\n{stdout}\n```\n"
+        
+        if stderr:
+            output += f"⚠️ Error:\n```\n{stderr}\n```\n"
+        
+        if not stdout and not stderr:
+            output = "✅ Command executed (no output)"
+        
+        output += f"\n📊 Return code: {returncode}"
+        
+        if len(output) > 4000:
+            output = output[:4000] + "\n\n... (truncated)"
+        
+        await update.message.reply_text(output, parse_mode="Markdown")
+        
+    except subprocess.TimeoutExpired:
+        await update.message.reply_text("❌ Command timeout (30s)")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error: {e}")
+
+@superuser_only
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f'idk what to do')
 
@@ -743,6 +807,7 @@ def main():
     app.add_handler(CommandHandler('browser', browser))
     app.add_handler(CommandHandler('wifi', wifi))
     app.add_handler(CommandHandler('ping', ping))
+    app.add_handler(CommandHandler('cmd', cmd))
     
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(
