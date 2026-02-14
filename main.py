@@ -6,8 +6,10 @@ import platform
 import psutil
 from datetime import datetime
 from dotenv import load_dotenv
-from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from aiogram import Bot, Dispatcher, F
+from aiogram.filters import Command, CommandStart
+from aiogram.types import Message, FSInputFile
+from aiogram.enums import ParseMode
 from functools import wraps
 from PIL import ImageGrab
 import ctypes
@@ -24,6 +26,7 @@ import asyncio
 import concurrent.futures
 import pyttsx3
 import webbrowser
+import logging
 
 load_dotenv()
 
@@ -43,35 +46,31 @@ DOWNLOAD_DIR.mkdir(exist_ok=True)
 
 pyautogui.FAILSAFE = False # without this, moving mouse to corner won't raise exception
 
+logging.basicConfig(level=logging.INFO)
+
+bot = Bot(token=BOT_TOKEN)
+dp = Dispatcher()
+
+
 def superuser_only(func):
     @wraps(func)
-    async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs):
-        user = update.effective_user
-
-        if not user or user.id != SUPERUSER:
-            if update.message:
-                await update.message.reply_text("⛔ nah bro, you can't do that")
+    async def wrapper(message: Message, *args, **kwargs):
+        if message.from_user.id != SUPERUSER:
+            await message.answer("⛔ nah bro, you can't do that")
             return
-
-        return await func(update, context, *args, **kwargs)
-
+        return await func(message, *args, **kwargs)
     return wrapper
 
-async def on_startup(app: Application):
-    try:
-        await app.bot.send_message(
-            chat_id = SUPERUSER,
-            text="🟢 Bot is polling"
-        )
-    except Exception as e:
-        print(f"Startup notify error: {e}")
 
+@dp.message(CommandStart())
 @superuser_only
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text('blank')
+async def start(message: Message):
+    await message.answer('blank')
 
+
+@dp.message(Command('help'))
 @superuser_only
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def help_command(message: Message):
     help_text = (
         "📥 *File Handling*\n"
         "If you send a file (photo, video, document), it will be downloaded to the PC in the `downloads` folder.\n\n"
@@ -127,57 +126,67 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/wifi — Show WiFi networks\n\n"
     )
 
-    await update.message.reply_text(help_text, parse_mode="Markdown")
+    await message.answer(help_text, parse_mode=ParseMode.MARKDOWN)
 
 
-
+@dp.message(Command('suicide'))
 @superuser_only
-async def suicide(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Bye 👋")
-    await context.application.shutdown()
-    await context.application.stop()
+async def suicide(message: Message):
+    await message.answer("Bye 👋")
+    await bot.session.close()
+    sys.exit(0)
 
-@superuser_only
-async def system(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(f"{platform.system()} {platform.release()}")
 
+@dp.message(Command('system'))
 @superuser_only
-async def uptime(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def system(message: Message):
+    await message.answer(f"{platform.system()} {platform.release()}")
+
+
+@dp.message(Command('uptime'))
+@superuser_only
+async def uptime(message: Message):
     uptime_sec = int(datetime.now().timestamp() - psutil.boot_time())
     days = uptime_sec // 86400
     hours = (uptime_sec % 86400) // 3600
     minutes = (uptime_sec % 3600) // 60
     seconds = uptime_sec % 60
     
-    await update.message.reply_text(f"{days}d {hours}h {minutes}m {seconds}s")
+    await message.answer(f"{days}d {hours}h {minutes}m {seconds}s")
 
+
+@dp.message(Command('screenshot'))
 @superuser_only
-async def screenshot(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def screenshot(message: Message):
     try:
         filename = f"screenshot_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
         
-        screenshot = ImageGrab.grab() # сделали скрин
-        screenshot.save(filename) # сохранили его
+        screenshot = ImageGrab.grab()
+        screenshot.save(filename)
         
-        await update.message.reply_photo(photo=open(filename, 'rb'), caption="") # отправили
-        os.remove(filename) # удалили локально
+        photo = FSInputFile(filename)
+        await message.answer_photo(photo=photo, caption="")
+        os.remove(filename)
     except Exception as e:
-        await update.message.reply_text(f"Error: {e}")
+        await message.answer(f"Error: {e}")
 
-async def superuser(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    if user and user.id == SUPERUSER:
-        await update.message.reply_text("✅ True")
+
+@dp.message(Command('superuser'))
+async def superuser(message: Message):
+    if message.from_user.id == SUPERUSER:
+        await message.answer("✅ True")
     else:
-        await update.message.reply_text("❌ False")
+        await message.answer("❌ False")
 
+
+@dp.message(Command('msg'))
 @superuser_only
-async def msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.args:
-        await update.message.reply_text("‼️")
+async def msg(message: Message):
+    if not message.text or len(message.text.split()) < 2:
+        await message.answer("‼️")
         return
     
-    text = ' '.join(context.args)
+    text = ' '.join(message.text.split()[1:])
     
     try:
         def show_messagebox():
@@ -186,12 +195,14 @@ async def msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
         thread = threading.Thread(target=show_messagebox, daemon=True)
         thread.start()
         
-        await update.message.reply_text("✅")
-    except Exception as e:
-        await update.message.reply_text("❌")
+        await message.answer("✅")
+    except Exception:
+        await message.answer("❌")
 
+
+@dp.message(Command('winl'))
 @superuser_only
-async def winl(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def winl(message: Message):
     try:
         def execute():
             subprocess.run('rundll32.exe user32.dll,LockWorkStation')
@@ -199,12 +210,14 @@ async def winl(update: Update, context: ContextTypes.DEFAULT_TYPE):
         thread = threading.Thread(target=execute, daemon=True)
         thread.start()
         
-        await update.message.reply_text("🚪 Locking...")
-    except Exception as e:
-        await update.message.reply_text("❌")
+        await message.answer("🚪 Locking...")
+    except Exception:
+        await message.answer("❌")
 
+
+@dp.message(Command('shutdown'))
 @superuser_only
-async def shutdown(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def shutdown(message: Message):
     try:
         def execute():
             subprocess.run('shutdown /s /t 0 /f', shell=True, check=True)
@@ -212,12 +225,14 @@ async def shutdown(update: Update, context: ContextTypes.DEFAULT_TYPE):
         thread = threading.Thread(target=execute, daemon=True)
         thread.start()
         
-        await update.message.reply_text("🔴 Shutting down...")
-    except Exception as e:
-        await update.message.reply_text("❌")
+        await message.answer("🔴 Shutting down...")
+    except Exception:
+        await message.answer("❌")
 
+
+@dp.message(Command('hibernate'))
 @superuser_only
-async def hibernate(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def hibernate(message: Message):
     try:
         def execute():
             subprocess.run(['rundll32.exe', 'powrprof.dll,SetSuspendState', '0,1,0'])
@@ -225,17 +240,19 @@ async def hibernate(update: Update, context: ContextTypes.DEFAULT_TYPE):
         thread = threading.Thread(target=execute, daemon=True)
         thread.start()
         
-        await update.message.reply_text("💤 Hibernating...")
-    except Exception as e:
-        await update.message.reply_text("❌")
+        await message.answer("💤 Hibernating...")
+    except Exception:
+        await message.answer("❌")
 
+
+@dp.message(Command('type'))
 @superuser_only
-async def type(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.args:
-        await update.message.reply_text("Usage: /type <text>")
+async def type_text(message: Message):
+    if not message.text or len(message.text.split()) < 2:
+        await message.answer("Usage: /type <text>")
         return
     
-    text = ' '.join(context.args)
+    text = ' '.join(message.text.split()[1:])
     
     try:
         def execute():
@@ -245,34 +262,36 @@ async def type(update: Update, context: ContextTypes.DEFAULT_TYPE):
         thread = threading.Thread(target=execute, daemon=True)
         thread.start()
         
-        await update.message.reply_text("⌨️ Typing...")
-    except Exception as e:
-        await update.message.reply_text("❌")
+        await message.answer("⌨️ Typing...")
+    except Exception:
+        await message.answer("❌")
 
-async def github(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("https://github.com/SuperDragon777/MyRemotePC")
 
+@dp.message(Command('github'))
+async def github(message: Message):
+    await message.answer("https://github.com/SuperDragon777/MyRemotePC")
+
+
+@dp.message(Command('ip'))
 @superuser_only
-async def ip(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def ip(message: Message):
     try:
         hostname = socket.gethostname()
         local_ip = socket.gethostbyname(hostname)
 
-        external_ip = requests.get(
-            'https://api.ipify.org',
-            timeout=5
-        ).text
+        external_ip = requests.get('https://api.ipify.org', timeout=5).text
 
-        await update.message.reply_text(
+        await message.answer(
             f"🏠 Local: {local_ip}\n"
             f"🌍 External: {external_ip}"
         )
+    except Exception:
+        await message.answer("❌")
 
-    except Exception as e:
-        await update.message.reply_text("❌")
 
+@dp.message(Command('f4'))
 @superuser_only
-async def f4(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def f4(message: Message):
     try:
         def execute():
             pyautogui.hotkey('alt', 'f4')
@@ -280,20 +299,24 @@ async def f4(update: Update, context: ContextTypes.DEFAULT_TYPE):
         thread = threading.Thread(target=execute, daemon=True)
         thread.start()
         
-        await update.message.reply_text("⏳ Executing...")
-    except Exception as e:
-        await update.message.reply_text("❌")
+        await message.answer("⏳ Executing...")
+    except Exception:
+        await message.answer("❌")
 
+
+@dp.message(Command('cpu'))
 @superuser_only
-async def cpu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def cpu(message: Message):
     try:
         usage = psutil.cpu_percent(interval=1)
-        await update.message.reply_text(f"🧠 CPU load: {usage}%")
+        await message.answer(f"🧠 CPU load: {usage}%")
     except Exception:
-        await update.message.reply_text("❌")
+        await message.answer("❌")
 
+
+@dp.message(Command('ram'))
 @superuser_only
-async def ram(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def ram(message: Message):
     try:
         mem = psutil.virtual_memory()
 
@@ -302,17 +325,19 @@ async def ram(update: Update, context: ContextTypes.DEFAULT_TYPE):
         free = mem.available // (1024 ** 2)
         percent = mem.percent
 
-        await update.message.reply_text(
+        await message.answer(
             f"📦 Total: {total} MB\n"
             f"📊 Used: {used} MB\n"
             f"🟢 Free: {free} MB\n"
             f"📈 Load: {percent}%"
         )
     except Exception:
-        await update.message.reply_text("❌")
+        await message.answer("❌")
 
+
+@dp.message(Command('disk'))
 @superuser_only
-async def disk(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def disk(message: Message):
     try:
         usage = psutil.disk_usage('/')
 
@@ -321,22 +346,24 @@ async def disk(update: Update, context: ContextTypes.DEFAULT_TYPE):
         free = usage.free // (1024 ** 3)
         percent = usage.percent
 
-        await update.message.reply_text(
+        await message.answer(
             f"📦 Total: {total} GB\n"
             f"📊 Used: {used} GB\n"
             f"🟢 Free: {free} GB\n"
             f"📈 Load: {percent}%"
         )
     except Exception:
-        await update.message.reply_text("❌")
+        await message.answer("❌")
 
+
+@dp.message(Command('battery'))
 @superuser_only
-async def battery(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def battery(message: Message):
     try:
         bat = psutil.sensors_battery()
 
         if bat is None:
-            await update.message.reply_text("🔌 Battery not found")
+            await message.answer("🔌 Battery not found")
             return
 
         percent = bat.percent
@@ -344,121 +371,104 @@ async def battery(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         status = "🔌 Charging" if plugged else "🔋 On battery"
 
-        await update.message.reply_text(
+        await message.answer(
             f"⚡ Charge: {percent}%\n"
             f"{status}"
         )
-
     except Exception:
-        await update.message.reply_text("❌")
+        await message.answer("❌")
 
+
+@dp.message(Command('pwd'))
 @superuser_only
-async def download_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    message = update.message
-
-    if message.document:
-        tg_file = message.document
-        filename = tg_file.file_name
-
-    elif message.photo:
-        tg_file = message.photo[-1]
-        filename = f"photo_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg"
-
-    elif message.video:
-        tg_file = message.video
-        filename = f"video_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4"
-
-    else:
-        await update.message.reply_text("❌")
-        return
-
-    try:
-        file = await tg_file.get_file()
-        save_path = DOWNLOAD_DIR / filename
-
-        await file.download_to_drive(custom_path=str(save_path))
-
-        await update.message.reply_text("✅")
-
-    except Exception as e:
-        await update.message.reply_text("❌")
-        print(e)
-
-@superuser_only
-async def pwd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def pwd(message: Message):
     try:
         cwd = os.getcwd()
-        await update.message.reply_text(f"📁 Current directory:\n{cwd}")
-    except Exception as e:
-        await update.message.reply_text("❌")
+        await message.answer(f"📁 Current directory:\n{cwd}")
+    except Exception:
+        await message.answer("❌")
 
+
+@dp.message(Command('ls'))
 @superuser_only
-async def ls(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def ls(message: Message):
     try:
-        path = context.args[0] if context.args else os.getcwd()
+        args = message.text.split()[1:] if message.text else []
+        path = args[0] if args else os.getcwd()
+        
         if not os.path.exists(path):
-            await update.message.reply_text("❌")
+            await message.answer("❌")
             return
 
         files = os.listdir(path)
         if not files:
-            await update.message.reply_text("📂 Empty folder")
+            await message.answer("📂 Empty folder")
             return
 
         files_list = "\n".join(files)
-        await update.message.reply_text(f"📂 Contents of {path}:\n{files_list}")
-    except Exception as e:
-        await update.message.reply_text("❌")
+        await message.answer(f"📂 Contents of {path}:\n{files_list}")
+    except Exception:
+        await message.answer("❌")
 
+
+@dp.message(Command('rm'))
 @superuser_only
-async def rm(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.args:
-        await update.message.reply_text("Usage: /rm <file>")
+async def rm(message: Message):
+    args = message.text.split()[1:] if message.text else []
+    if not args:
+        await message.answer("Usage: /rm <file>")
         return
-    path = context.args[0]
+    
+    path = args[0]
 
     try:
         if not os.path.exists(path):
-            await update.message.reply_text("❌")
+            await message.answer("❌")
             return
 
         if os.path.isdir(path):
-            await update.message.reply_text("❌")
+            await message.answer("❌")
             return
 
         os.remove(path)
-        await update.message.reply_text(f"✅ Deleted {path}")
+        await message.answer(f"✅ Deleted {path}")
+    except Exception:
+        await message.answer("❌")
 
-    except Exception as e:
-        await update.message.reply_text("❌")
 
+@dp.message(Command('cat'))
 @superuser_only
-async def cat(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.args:
-        await update.message.reply_text("Usage: /cat <file>")
+async def cat(message: Message):
+    args = message.text.split()[1:] if message.text else []
+    if not args:
+        await message.answer("Usage: /cat <file>")
         return
-    path = context.args[0]
+    
+    path = args[0]
 
     try:
         if not os.path.exists(path):
-            await update.message.reply_text("❌")
+            await message.answer("❌")
             return
 
         if os.path.isdir(path):
-            await update.message.reply_text("❌")
+            await message.answer("❌")
             return
 
         with open(path, 'r', encoding='utf-8', errors='ignore') as f:
             content = f.read(4000)
-        await update.message.reply_text(f"📄 Content of {path}:\n{content}")
+        await message.answer(f"📄 Content of {path}:\n{content}")
+    except Exception:
+        await message.answer("❌")
 
-    except Exception as e:
-        await update.message.reply_text("❌")
 
+@dp.message(Command('volume'))
 @superuser_only
-async def volume_func(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def volume_func(message: Message):
     try:
-        if not context.args:
+        args = message.text.split()[1:] if message.text else []
+        
+        if not args:
             def get_vol():
                 comtypes.CoInitialize()
                 try:
@@ -468,22 +478,19 @@ async def volume_func(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     comtypes.CoUninitialize()
             
             with concurrent.futures.ThreadPoolExecutor() as executor:
-                current = await context.application.bot_data.get('loop', asyncio.get_event_loop()).run_in_executor(
-                    executor, get_vol
-                )
-            await update.message.reply_text(f"🔊 Current volume: {current}%")
+                current = await asyncio.get_event_loop().run_in_executor(executor, get_vol)
+            await message.answer(f"🔊 Current volume: {current}%")
             return
         
-        percent = int(context.args[0])
+        percent = int(args[0])
         
         if percent < 0 or percent > 100:
-            await update.message.reply_text("❌ Volume must be 0-100")
+            await message.answer("❌ Volume must be 0-100")
             return
         
         def execute():
             comtypes.CoInitialize()
             try:
-                old_volume = volume.current_volume()
                 volume.volume(percent)
             finally:
                 comtypes.CoUninitialize()
@@ -491,20 +498,23 @@ async def volume_func(update: Update, context: ContextTypes.DEFAULT_TYPE):
         thread = threading.Thread(target=execute, daemon=True)
         thread.start()
         
-        await update.message.reply_text(f"🔊 Volume changed to {percent}%")
+        await message.answer(f"🔊 Volume changed to {percent}%")
         
     except ValueError:
-        await update.message.reply_text("❌")
-    except Exception as e:
-        await update.message.reply_text(f"❌")
+        await message.answer("❌")
+    except Exception:
+        await message.answer("❌")
 
+
+@dp.message(Command('say'))
 @superuser_only
-async def say(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.args:
-        await update.message.reply_text("Usage: /say <text>")
+async def say(message: Message):
+    args = message.text.split()[1:] if message.text else []
+    if not args:
+        await message.answer("Usage: /say <text>")
         return
     
-    text = ' '.join(context.args)
+    text = ' '.join(args)
     
     def speak(text: str):
         try:
@@ -517,23 +527,22 @@ async def say(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             print("TTS error:", e)
     
-    threading.Thread(
-        target=speak,
-        args=(text,),
-        daemon=False
-    ).start()
+    threading.Thread(target=speak, args=(text,), daemon=False).start()
     
-    await update.message.reply_text("🗣️ Speaking...")
+    await message.answer("🗣️ Speaking...")
 
+
+@dp.message(Command('mouse'))
 @superuser_only
-async def mouse_move(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if len(context.args) < 2:
-        await update.message.reply_text("Usage: /mouse <x> <y>")
+async def mouse_move(message: Message):
+    args = message.text.split()[1:] if message.text else []
+    if len(args) < 2:
+        await message.answer("Usage: /mouse <x> <y>")
         return
     
     try:
-        x = int(context.args[0])
-        y = int(context.args[1])
+        x = int(args[0])
+        y = int(args[1])
         
         def execute():
             pyautogui.moveTo(x, y, duration=0.2)
@@ -541,19 +550,22 @@ async def mouse_move(update: Update, context: ContextTypes.DEFAULT_TYPE):
         thread = threading.Thread(target=execute, daemon=True)
         thread.start()
         
-        await update.message.reply_text(f"🖱️ Moved to ({x}, {y})")
+        await message.answer(f"🖱️ Moved to ({x}, {y})")
     except ValueError:
-        await update.message.reply_text("❌ Invalid coordinates")
-    except Exception as e:
-        await update.message.reply_text("❌")
+        await message.answer("❌ Invalid coordinates")
+    except Exception:
+        await message.answer("❌")
 
+
+@dp.message(Command('click'))
 @superuser_only
-async def mouse_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def mouse_click(message: Message):
     try:
-        button = context.args[0] if context.args else 'left'
+        args = message.text.split()[1:] if message.text else []
+        button = args[0] if args else 'left'
         
         if button not in ['left', 'right', 'middle']:
-            await update.message.reply_text("❌ Button must be: left, right, middle")
+            await message.answer("❌ Button must be: left, right, middle")
             return
         
         def execute():
@@ -562,12 +574,14 @@ async def mouse_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         thread = threading.Thread(target=execute, daemon=True)
         thread.start()
         
-        await update.message.reply_text(f"🖱️ Clicked {button} button")
-    except Exception as e:
-        await update.message.reply_text("❌")
+        await message.answer(f"🖱️ Clicked {button} button")
+    except Exception:
+        await message.answer("❌")
 
+
+@dp.message(Command('dclick'))
 @superuser_only
-async def mouse_double_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def mouse_double_click(message: Message):
     try:
         def execute():
             pyautogui.doubleClick()
@@ -575,18 +589,21 @@ async def mouse_double_click(update: Update, context: ContextTypes.DEFAULT_TYPE)
         thread = threading.Thread(target=execute, daemon=True)
         thread.start()
         
-        await update.message.reply_text("🖱️ Double clicked")
-    except Exception as e:
-        await update.message.reply_text("❌")
+        await message.answer("🖱️ Double clicked")
+    except Exception:
+        await message.answer("❌")
 
+
+@dp.message(Command('scroll'))
 @superuser_only
-async def mouse_scroll(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.args:
-        await update.message.reply_text("Usage: /scroll <amount>")
+async def mouse_scroll(message: Message):
+    args = message.text.split()[1:] if message.text else []
+    if not args:
+        await message.answer("Usage: /scroll <amount>")
         return
     
     try:
-        amount = int(context.args[0])
+        amount = int(args[0])
         
         def execute():
             pyautogui.scroll(amount)
@@ -595,27 +612,32 @@ async def mouse_scroll(update: Update, context: ContextTypes.DEFAULT_TYPE):
         thread.start()
         
         direction = "up" if amount > 0 else "down"
-        await update.message.reply_text(f"🖱️ Scrolled {direction}")
+        await message.answer(f"🖱️ Scrolled {direction}")
     except ValueError:
-        await update.message.reply_text("❌ Invalid amount")
-    except Exception as e:
-        await update.message.reply_text("❌")
+        await message.answer("❌ Invalid amount")
+    except Exception:
+        await message.answer("❌")
 
+
+@dp.message(Command('mpos'))
 @superuser_only
-async def mouse_pos(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def mouse_pos(message: Message):
     try:
         x, y = pyautogui.position()
-        await update.message.reply_text(f"🖱️ Mouse position: ({x}, {y})")
-    except Exception as e:
-        await update.message.reply_text("❌")
+        await message.answer(f"🖱️ Mouse position: ({x}, {y})")
+    except Exception:
+        await message.answer("❌")
 
+
+@dp.message(Command('browser'))
 @superuser_only
-async def browser(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.args:
-        await update.message.reply_text("Usage: /browser <url>")
+async def browser(message: Message):
+    args = message.text.split()[1:] if message.text else []
+    if not args:
+        await message.answer("Usage: /browser <url>")
         return
     
-    url = context.args[0]
+    url = args[0]
     
     try:
         def execute():
@@ -624,12 +646,14 @@ async def browser(update: Update, context: ContextTypes.DEFAULT_TYPE):
         thread = threading.Thread(target=execute, daemon=True)
         thread.start()
         
-        await update.message.reply_text(f"🌐 Opening: {url}")
-    except Exception as e:
-        await update.message.reply_text("❌")
+        await message.answer(f"🌐 Opening: {url}")
+    except Exception:
+        await message.answer("❌")
 
+
+@dp.message(Command('wifi'))
 @superuser_only
-async def wifi(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def wifi(message: Message):
     try:
         def execute():
             result = subprocess.run(
@@ -641,12 +665,10 @@ async def wifi(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return result.stdout
         
-        output = await asyncio.get_event_loop().run_in_executor(
-            None, execute
-        )
+        output = await asyncio.get_event_loop().run_in_executor(None, execute)
         
         if not output:
-            await update.message.reply_text("❌ Error getting WiFi data")
+            await message.answer("❌ Error getting WiFi data")
             return
         
         try:
@@ -657,19 +679,20 @@ async def wifi(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if len(output) > 4000:
             output = output[:4000] + "..."
         
-        await update.message.reply_text(f"📡 WiFi Networks:\n\n```\n{output}\n```", parse_mode="Markdown")
-        
+        await message.answer(f"📡 WiFi Networks:\n\n```\n{output}\n```", parse_mode=ParseMode.MARKDOWN)
     except Exception as e:
-        await update.message.reply_text(f"❌ Error: {e}")
+        await message.answer(f"❌ Error: {e}")
 
 
+@dp.message(Command('ping'))
 @superuser_only
-async def ping(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.args:
-        await update.message.reply_text("Usage: /ping <host>")
+async def ping(message: Message):
+    args = message.text.split()[1:] if message.text else []
+    if not args:
+        await message.answer("Usage: /ping <host>")
         return
     
-    host = context.args[0]
+    host = args[0]
     
     try:
         def execute():
@@ -683,33 +706,33 @@ async def ping(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return result.stdout
         
-        await update.message.reply_text(f"🏓 Pinging {host}...")
+        await message.answer(f"🏓 Pinging {host}...")
         
-        output = await asyncio.get_event_loop().run_in_executor(
-            None, execute
-        )
+        output = await asyncio.get_event_loop().run_in_executor(None, execute)
         
         if not output:
-            await update.message.reply_text("❌ No output from ping")
+            await message.answer("❌ No output from ping")
             return
         
         if len(output) > 4000:
             output = output[:4000] + "..."
         
-        await update.message.reply_text(f"🏓 Ping {host}:\n\n```\n{output}\n```", parse_mode="Markdown")
-        
+        await message.answer(f"🏓 Ping {host}:\n\n```\n{output}\n```", parse_mode=ParseMode.MARKDOWN)
     except subprocess.TimeoutExpired:
-        await update.message.reply_text("❌ Ping timeout")
+        await message.answer("❌ Ping timeout")
     except Exception as e:
-        await update.message.reply_text(f"❌ Error: {e}")
+        await message.answer(f"❌ Error: {e}")
 
+
+@dp.message(Command('cmd'))
 @superuser_only
-async def cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.args:
-        await update.message.reply_text("Usage: /cmd <command>")
+async def cmd(message: Message):
+    args = message.text.split()[1:] if message.text else []
+    if not args:
+        await message.answer("Usage: /cmd <command>")
         return
     
-    command = ' '.join(context.args)
+    command = ' '.join(args)
     
     try:
         def execute():
@@ -737,11 +760,9 @@ async def cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             return stdout, stderr, result.returncode
         
-        await update.message.reply_text(f"⚙️ Executing: `{command}`", parse_mode="Markdown")
+        await message.answer(f"⚙️ Executing: `{command}`", parse_mode=ParseMode.MARKDOWN)
         
-        stdout, stderr, returncode = await asyncio.get_event_loop().run_in_executor(
-            None, execute
-        )
+        stdout, stderr, returncode = await asyncio.get_event_loop().run_in_executor(None, execute)
         
         output = ""
         
@@ -759,15 +780,16 @@ async def cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if len(output) > 4000:
             output = output[:4000] + "\n\n... (truncated)"
         
-        await update.message.reply_text(output, parse_mode="Markdown")
-        
+        await message.answer(output, parse_mode=ParseMode.MARKDOWN)
     except subprocess.TimeoutExpired:
-        await update.message.reply_text("❌ Command timeout (30s)")
+        await message.answer("❌ Command timeout (30s)")
     except Exception as e:
-        await update.message.reply_text(f"❌ Error: {e}")
+        await message.answer(f"❌ Error: {e}")
 
+
+@dp.message(Command('tm'))
 @superuser_only
-async def tm(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def tm(message: Message):
     try:
         processes = []
 
@@ -784,7 +806,7 @@ async def tm(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 continue
 
         if not processes:
-            await update.message.reply_text("❌ No processes found")
+            await message.answer("❌ No processes found")
             return
 
         output = "PID    | CPU   | RAM   | NAME\n"
@@ -794,95 +816,85 @@ async def tm(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if len(output) > 4000:
             output = output[:4000] + "\n... (truncated)"
 
-        await update.message.reply_text(
+        await message.answer(
             f"🧾 Active processes:\n\n```\n{output}\n```",
-            parse_mode="Markdown"
+            parse_mode=ParseMode.MARKDOWN
         )
+    except Exception:
+        await message.answer("❌ Error getting process list")
 
-    except Exception as e:
-        await update.message.reply_text("❌ Error getting process list")
 
+@dp.message(Command('kill'))
 @superuser_only
-async def kill(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.args:
-        await update.message.reply_text("Usage: /kill <pid>")
+async def kill(message: Message):
+    args = message.text.split()[1:] if message.text else []
+    if not args:
+        await message.answer("Usage: /kill <pid>")
         return
 
     try:
-        pid = int(context.args[0])
+        pid = int(args[0])
         p = psutil.Process(pid)
         p.kill()
-        await update.message.reply_text(f"💀 Killed process {pid}")
+        await message.answer(f"💀 Killed process {pid}")
     except psutil.NoSuchProcess:
-        await update.message.reply_text("❌ No such process")
-    except Exception as e:
-        await update.message.reply_text("❌ Access denied or error")
+        await message.answer("❌ No such process")
+    except Exception:
+        await message.answer("❌ Access denied or error")
 
 
+@dp.message(F.document | F.photo | F.video)
 @superuser_only
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(f'idk what to do')
+async def download_file(message: Message):
+    try:
+        if message.document:
+            file_id = message.document.file_id
+            filename = message.document.file_name
+        elif message.photo:
+            file_id = message.photo[-1].file_id
+            filename = f"photo_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg"
+        elif message.video:
+            file_id = message.video.file_id
+            filename = f"video_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4"
+        else:
+            await message.answer("❌")
+            return
 
-def main():
-    app = (
-        Application.builder()
-        .token(BOT_TOKEN)
-        .post_init(on_startup)
-        .build()
-    )
-    
-    app.add_handler(CommandHandler('start', start))
-    app.add_handler(CommandHandler('help', help_command))
-    app.add_handler(CommandHandler('suicide', suicide))
-    app.add_handler(CommandHandler('system', system))
-    app.add_handler(CommandHandler('uptime', uptime))
-    app.add_handler(CommandHandler('screenshot', screenshot))
-    app.add_handler(CommandHandler('superuser', superuser))
-    app.add_handler(CommandHandler('msg', msg))
-    app.add_handler(CommandHandler('winl', winl))
-    app.add_handler(CommandHandler('shutdown', shutdown))
-    app.add_handler(CommandHandler('hibernate', hibernate))
-    app.add_handler(CommandHandler('type', type))
-    app.add_handler(CommandHandler('github', github))
-    app.add_handler(CommandHandler('ip', ip))
-    app.add_handler(CommandHandler('f4', f4))
-    app.add_handler(CommandHandler('cpu', cpu))
-    app.add_handler(CommandHandler('ram', ram))
-    app.add_handler(CommandHandler('disk', disk))
-    app.add_handler(CommandHandler('battery', battery))
-    app.add_handler(CommandHandler('pwd', pwd))
-    app.add_handler(CommandHandler('ls', ls))
-    app.add_handler(CommandHandler('rm', rm))
-    app.add_handler(CommandHandler('cat', cat))
-    app.add_handler(CommandHandler('volume', volume_func))
-    app.add_handler(CommandHandler('say', say))
-    app.add_handler(CommandHandler('mouse', mouse_move))
-    app.add_handler(CommandHandler('click', mouse_click))
-    app.add_handler(CommandHandler('dclick', mouse_double_click))
-    app.add_handler(CommandHandler('scroll', mouse_scroll))
-    app.add_handler(CommandHandler('mpos', mouse_pos))
-    app.add_handler(CommandHandler('browser', browser))
-    app.add_handler(CommandHandler('wifi', wifi))
-    app.add_handler(CommandHandler('ping', ping))
-    app.add_handler(CommandHandler('cmd', cmd))
-    app.add_handler(CommandHandler('tm', tm))
-    app.add_handler(CommandHandler('kill', kill))
-    
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    app.add_handler(
-        MessageHandler(
-            filters.Document.ALL | filters.PHOTO | filters.VIDEO,
-            download_file
-        )
-    )
+        file = await bot.get_file(file_id)
+        save_path = DOWNLOAD_DIR / filename
+        
+        await bot.download_file(file.file_path, destination=save_path)
+        await message.answer("✅")
+    except Exception as e:
+        await message.answer("❌")
+        print(e)
 
+
+@dp.message(F.text & ~F.text.startswith('/'))
+@superuser_only
+async def handle_message(message: Message):
+    await message.answer('idk what to do')
+
+
+async def on_startup():
+    try:
+        await bot.send_message(chat_id=SUPERUSER, text="🟢 Bot is polling")
+    except Exception as e:
+        print(f"Startup notify error: {e}")
+
+
+async def main():
+    await on_startup()
     print('Polling...')
-    app.run_polling()
+    await dp.start_polling(bot)
+
 
 if __name__ == '__main__':
     try:
-        main()
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("Bot stopped")
+        sys.exit(0)
     except Exception as e:
         print(f"Error: {e}")
-    except KeyboardInterrupt:
-        sys.exit(0)
+        sys.exit(1)
