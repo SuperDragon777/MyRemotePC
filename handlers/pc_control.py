@@ -37,16 +37,22 @@ def register_handlers(dispatcher: Dispatcher, bot_instance: Bot):
 @superuser_only
 async def screenshot_handler(message: Message):
     try:
-        filename = f"screenshot_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+        status_msg = await message.answer("📸 Делаю скриншот...")
+        
+        filename = f"screenshot_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg"
         
         screenshot = ImageGrab.grab()
-        screenshot.save(filename)
+        
+        screenshot.save(filename, "JPEG", quality=85, optimize=True)
+        
+        await status_msg.delete()
         
         photo = FSInputFile(filename)
-        await message.answer_photo(photo=photo, caption="")
+        await message.answer_photo(photo=photo, caption="📸 Screenshot")
+        
         os.remove(filename)
     except Exception as e:
-        await message.answer(f"Error: {e}")
+        await message.answer(f"❌ Error: {e}")
 
 
 @superuser_only
