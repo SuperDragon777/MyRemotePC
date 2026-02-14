@@ -239,37 +239,60 @@ async def cmd_handler(message: Message):
 @superuser_only
 async def tm_handler(message: Message):
     try:
+        status_msg = await message.answer("⏳ Сбор данных...")
+        
+        all_procs = list(psutil.process_iter(['pid', 'name']))
+        for proc in all_procs:
+            try:
+                proc.cpu_percent()
+            except:
+                pass
+        
+        await asyncio.sleep(0.5)
+        
         processes = []
-
-        for proc in psutil.process_iter(['pid', 'name', 'cpu_percent', 'memory_percent']):
+        for proc in all_procs:
             try:
                 info = proc.info
-                processes.append(
-                    f"{info['pid']:>6} | "
-                    f"{info['cpu_percent']:>5.1f}% CPU | "
-                    f"{info['memory_percent']:>5.1f}% RAM | "
-                    f"{info['name']}"
-                )
+                if info['name'] == 'System Idle Process':
+                    continue
+                
+                processes.append({
+                    'pid': info['pid'],
+                    'name': info['name'] or 'Unknown',
+                    'cpu': proc.cpu_percent(),
+                    'mem': proc.memory_percent(),
+                })
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 continue
-
-        if not processes:
-            await message.answer("❌ No processes found")
-            return
-
-        output = "PID    | CPU   | RAM   | NAME\n"
-        output += "-" * 40 + "\n"
-        output += "\n".join(processes[:40])
-
-        if len(output) > 4000:
-            output = output[:4000] + "\n... (truncated)"
-
-        await message.answer(
-            f"🧾 Active processes:\n\n```\n{output}\n```",
-            parse_mode=ParseMode.MARKDOWN
-        )
-    except Exception:
-        await message.answer("❌ Error getting process list")
+        
+        await status_msg.delete()
+        
+        processes.sort(key=lambda x: x['cpu'], reverse=True)
+        
+        text = "<b>🔥 TOP 25 CPU</b>\n\n"
+        
+        for i, p in enumerate(processes[:25], 1):
+            if p['cpu'] > 50:
+                emoji = "🔴"
+            elif p['cpu'] > 20:
+                emoji = "🟡"
+            else:
+                emoji = "🟢"
+            
+            text += f"{i:>2}. {emoji} <code>{p['cpu']:>5.1f}%</code> {p['name'][:28]} <code>{p['pid']}</code>\n"
+        
+        cpu = psutil.cpu_percent()
+        mem = psutil.virtual_memory()
+        
+        text += f"\n💻 CPU: <b>{cpu}%</b> │ 💾 RAM: <b>{mem.percent}%</b>"
+        text += f"\n📊 Процессов: <b>{len(processes)}</b>"
+        
+        await message.answer(text, parse_mode=ParseMode.HTML)
+        
+    except Exception as e:
+        logger.error(f"Error: {e}")
+        await message.answer("❌ Ошибка")
 
 
 @superuser_only
