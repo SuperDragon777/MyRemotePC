@@ -5,7 +5,7 @@ from aiogram import Dispatcher
 from aiogram.filters import Command
 from aiogram.types import Message
 from .decorators import superuser_only
-
+import keyboard
 
 def register_handlers(dispatcher: Dispatcher):
     dispatcher.message.register(type_text_handler, Command('type'))
@@ -26,15 +26,14 @@ async def type_text_handler(message: Message):
     
     try:
         def execute():
-            time.sleep(0.5)
-            pyautogui.typewrite(text, interval=0.05)
+            keyboard.write(text, delay=0.05)
         
         thread = threading.Thread(target=execute, daemon=True)
         thread.start()
         
         await message.answer("⌨️ Typing...")
-    except Exception:
-        await message.answer("❌")
+    except Exception as e:
+        await message.answer(f"❌ Error: {e}")
 
 
 @superuser_only
